@@ -1,9 +1,7 @@
-"use strict";
-
 const GENDERIZE_URL = "https://api.genderize.io";
 const EXTERNAL_TIMEOUT_MS = 5000;
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   // ── CORS ──────────────────────────────────────────────────────────────────
   res.setHeader("Access-Control-Allow-Origin", "*");
 
