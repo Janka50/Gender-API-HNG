@@ -2,7 +2,7 @@
   "name": "gender-classify-api",
   "version": "1.0.0",
   "description": "Serverless gender classification API powered by Genderize.io",
-  "type": "module",
+  
   "engines": {
     "node": ">=18.0.0"
   },
