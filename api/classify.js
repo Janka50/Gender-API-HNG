@@ -43,7 +43,7 @@ module.exports = async function handler(req, res) {
   const count = genderizeData.count;
 
   if (gender === null || count === 0) {
-    return res.status(200).json({
+    return res.status(400).json({
       status: "error",
       message: "No prediction available for the provided name",
     });
