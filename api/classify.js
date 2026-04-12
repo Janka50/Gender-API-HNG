@@ -4,7 +4,7 @@ module.exports = async function handler(req, res) {
   const name = req.query.name;
 
   if (!name || name.trim() === "") {
-    return res.status(400).json({
+    return res.status(200).json({
       status: "error",
       message: "Query parameter 'name' is required and cannot be empty",
     });
