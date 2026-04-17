@@ -2,10 +2,12 @@
 
 const express = require("express");
 const { v4: uuidv4 } = require("uuid");
-const { getDb, runQuery, getOne, getAll } = require("../db");
 const { fetchGenderize, fetchAgify, fetchNationalize, getAgeGroup } = require("../helpers");
 
 const router = express.Router();
+
+// In-memory store
+const profiles = new Map();
 
 // POST /api/profiles
 router.post("/", async (req, res) => {
@@ -19,9 +21,8 @@ router.post("/", async (req, res) => {
   }
 
   const cleanName = name.trim();
-  const db = await getDb();
 
-  const existing = getOne(db, "SELECT * FROM profiles WHERE name = ?", [cleanName]);
+  const existing = [...profiles.values()].find(p => p.name.toLowerCase() === cleanName.toLowerCase());
   if (existing) {
     return res.status(200).json({ status: "success", message: "Profile already exists", data: existing });
   }
@@ -50,63 +51,42 @@ router.post("/", async (req, res) => {
     created_at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
   };
 
-  try {
-    runQuery(db,
-      `INSERT INTO profiles (id, name, gender, gender_probability, sample_size, age, age_group, country_id, country_probability, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [profile.id, profile.name, profile.gender, profile.gender_probability, profile.sample_size,
-       profile.age, profile.age_group, profile.country_id, profile.country_probability, profile.created_at]
-    );
-  } catch {
-    return res.status(500).json({ status: "error", message: "Failed to save profile to database" });
-  }
+  profiles.set(profile.id, profile);
 
   return res.status(201).json({ status: "success", data: profile });
 });
 
 // GET /api/profiles
-router.get("/", async (req, res) => {
+router.get("/", (req, res) => {
   const { gender, country_id, age_group } = req.query;
-  const db = await getDb();
 
-  let sql = "SELECT id, name, gender, age, age_group, country_id FROM profiles WHERE 1=1";
-  const params = [];
+  let result = [...profiles.values()];
 
-  if (gender)     { sql += " AND LOWER(gender) = LOWER(?)"; params.push(gender); }
-  if (country_id) { sql += " AND LOWER(country_id) = LOWER(?)"; params.push(country_id); }
-  if (age_group)  { sql += " AND LOWER(age_group) = LOWER(?)"; params.push(age_group); }
+  if (gender)     result = result.filter(p => p.gender?.toLowerCase() === gender.toLowerCase());
+  if (country_id) result = result.filter(p => p.country_id?.toLowerCase() === country_id.toLowerCase());
+  if (age_group)  result = result.filter(p => p.age_group?.toLowerCase() === age_group.toLowerCase());
 
-  try {
-    const profiles = getAll(db, sql, params);
-    return res.status(200).json({ status: "success", count: profiles.length, data: profiles });
-  } catch {
-    return res.status(500).json({ status: "error", message: "Failed to retrieve profiles" });
-  }
+  const data = result.map(({ id, name, gender, age, age_group, country_id }) =>
+    ({ id, name, gender, age, age_group, country_id })
+  );
+
+  return res.status(200).json({ status: "success", count: data.length, data });
 });
 
 // GET /api/profiles/:id
-router.get("/:id", async (req, res) => {
-  const db = await getDb();
-  try {
-    const profile = getOne(db, "SELECT * FROM profiles WHERE id = ?", [req.params.id]);
-    if (!profile) return res.status(404).json({ status: "error", message: "Profile not found" });
-    return res.status(200).json({ status: "success", data: profile });
-  } catch {
-    return res.status(500).json({ status: "error", message: "Failed to retrieve profile" });
-  }
+router.get("/:id", (req, res) => {
+  const profile = profiles.get(req.params.id);
+  if (!profile) return res.status(404).json({ status: "error", message: "Profile not found" });
+  return res.status(200).json({ status: "success", data: profile });
 });
 
 // DELETE /api/profiles/:id
-router.delete("/:id", async (req, res) => {
-  const db = await getDb();
-  try {
-    const profile = getOne(db, "SELECT id FROM profiles WHERE id = ?", [req.params.id]);
-    if (!profile) return res.status(404).json({ status: "error", message: "Profile not found" });
-    runQuery(db, "DELETE FROM profiles WHERE id = ?", [req.params.id]);
-    return res.status(204).end();
-  } catch {
-    return res.status(500).json({ status: "error", message: "Failed to delete profile" });
+router.delete("/:id", (req, res) => {
+  if (!profiles.has(req.params.id)) {
+    return res.status(404).json({ status: "error", message: "Profile not found" });
   }
+  profiles.delete(req.params.id);
+  return res.status(204).end();
 });
 
 module.exports = router;
