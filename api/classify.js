@@ -1,10 +1,13 @@
-module.exports = async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+"use strict";
 
+const express = require("express");
+const router = express.Router();
+
+router.get("/", async (req, res) => {
   const name = req.query.name;
 
-  if (!name || name.trim() === "") {
-    return res.status(200).json({
+  if (name === undefined || name === null || name.trim() === "") {
+    return res.status(400).json({
       status: "error",
       message: "Query parameter 'name' is required and cannot be empty",
     });
@@ -20,7 +23,7 @@ module.exports = async function handler(req, res) {
   let genderizeData;
 
   try {
-    const url = "https://api.genderize.io?name=" + encodeURIComponent(name);
+    const url = "https://api.genderize.io?name=" + encodeURIComponent(name.trim());
     const response = await fetch(url);
 
     if (!response.ok) {
@@ -31,19 +34,17 @@ module.exports = async function handler(req, res) {
     }
 
     genderizeData = await response.json();
-  } catch (err) {
+  } catch {
     return res.status(500).json({
       status: "error",
       message: "Failed to reach the upstream API",
     });
   }
 
-  const gender = genderizeData.gender;
-  const probability = genderizeData.probability;
-  const count = genderizeData.count;
+  const { gender, probability, count } = genderizeData;
 
-  if (gender === null || count === 0) {
-    return res.status(400).json({
+  if (gender === null || gender === undefined || count === 0) {
+    return res.status(200).json({
       status: "error",
       message: "No prediction available for the provided name",
     });
@@ -56,12 +57,14 @@ module.exports = async function handler(req, res) {
   return res.status(200).json({
     status: "success",
     data: {
-      name: name,
-      gender: gender,
-      probability: probability,
-      sample_size: sample_size,
-      is_confident: is_confident,
-      processed_at: processed_at,
+      name: name.trim(),
+      gender,
+      probability,
+      sample_size,
+      is_confident,
+      processed_at,
     },
   });
-};
+});
+
+module.exports = router;

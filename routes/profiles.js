@@ -1,63 +1,44 @@
 "use strict";
 
 const express = require("express");
-const { v7: uuidv7 } = require("uuid");
-const db = require("../db");
+const { v4: uuidv4 } = require("uuid");
+const { getDb, runQuery, getOne, getAll } = require("../db");
 const { fetchGenderize, fetchAgify, fetchNationalize, getAgeGroup } = require("../helpers");
 
 const router = express.Router();
 
-// ── POST /api/profiles ────────────────────────────────────────────────────────
+// POST /api/profiles
 router.post("/", async (req, res) => {
   const { name } = req.body || {};
 
   if (name === undefined || name === null || (typeof name === "string" && name.trim() === "")) {
-    return res.status(400).json({
-      status: "error",
-      message: "Query parameter 'name' is required and cannot be empty",
-    });
+    return res.status(400).json({ status: "error", message: "Query parameter 'name' is required and cannot be empty" });
   }
-
   if (typeof name !== "string") {
-    return res.status(422).json({
-      status: "error",
-      message: "Query parameter 'name' must be a string",
-    });
+    return res.status(422).json({ status: "error", message: "Query parameter 'name' must be a string" });
   }
 
   const cleanName = name.trim();
+  const db = await getDb();
 
-  const existing = db.prepare("SELECT * FROM profiles WHERE name = ?").get(cleanName);
+  const existing = getOne(db, "SELECT * FROM profiles WHERE name = ?", [cleanName]);
   if (existing) {
-    return res.status(200).json({
-      status: "success",
-      message: "Profile already exists",
-      data: existing,
-    });
+    return res.status(200).json({ status: "success", message: "Profile already exists", data: existing });
   }
 
   let genderData, ageData, nationalityData;
 
-  try {
-    genderData = await fetchGenderize(cleanName);
-  } catch {
-    return res.status(502).json({ status: "error", message: "Genderize returned an invalid response" });
-  }
+  try { genderData = await fetchGenderize(cleanName); }
+  catch { return res.status(502).json({ status: "error", message: "Genderize returned an invalid response" }); }
 
-  try {
-    ageData = await fetchAgify(cleanName);
-  } catch {
-    return res.status(502).json({ status: "error", message: "Agify returned an invalid response" });
-  }
+  try { ageData = await fetchAgify(cleanName); }
+  catch { return res.status(502).json({ status: "error", message: "Agify returned an invalid response" }); }
 
-  try {
-    nationalityData = await fetchNationalize(cleanName);
-  } catch {
-    return res.status(502).json({ status: "error", message: "Nationalize returned an invalid response" });
-  }
+  try { nationalityData = await fetchNationalize(cleanName); }
+  catch { return res.status(502).json({ status: "error", message: "Nationalize returned an invalid response" }); }
 
   const profile = {
-    id: uuidv7(),
+    id: uuidv4(),
     name: cleanName,
     gender: genderData.gender,
     gender_probability: genderData.gender_probability,
@@ -70,12 +51,12 @@ router.post("/", async (req, res) => {
   };
 
   try {
-    db.prepare(`
-      INSERT INTO profiles
-        (id, name, gender, gender_probability, sample_size, age, age_group, country_id, country_probability, created_at)
-      VALUES
-        (@id, @name, @gender, @gender_probability, @sample_size, @age, @age_group, @country_id, @country_probability, @created_at)
-    `).run(profile);
+    runQuery(db,
+      `INSERT INTO profiles (id, name, gender, gender_probability, sample_size, age, age_group, country_id, country_probability, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [profile.id, profile.name, profile.gender, profile.gender_probability, profile.sample_size,
+       profile.age, profile.age_group, profile.country_id, profile.country_probability, profile.created_at]
+    );
   } catch {
     return res.status(500).json({ status: "error", message: "Failed to save profile to database" });
   }
@@ -83,29 +64,31 @@ router.post("/", async (req, res) => {
   return res.status(201).json({ status: "success", data: profile });
 });
 
-// ── GET /api/profiles ─────────────────────────────────────────────────────────
-router.get("/", (req, res) => {
+// GET /api/profiles
+router.get("/", async (req, res) => {
   const { gender, country_id, age_group } = req.query;
+  const db = await getDb();
 
-  let query = "SELECT id, name, gender, age, age_group, country_id FROM profiles WHERE 1=1";
+  let sql = "SELECT id, name, gender, age, age_group, country_id FROM profiles WHERE 1=1";
   const params = [];
 
-  if (gender)     { query += " AND LOWER(gender) = LOWER(?)";     params.push(gender); }
-  if (country_id) { query += " AND LOWER(country_id) = LOWER(?)"; params.push(country_id); }
-  if (age_group)  { query += " AND LOWER(age_group) = LOWER(?)";  params.push(age_group); }
+  if (gender)     { sql += " AND LOWER(gender) = LOWER(?)"; params.push(gender); }
+  if (country_id) { sql += " AND LOWER(country_id) = LOWER(?)"; params.push(country_id); }
+  if (age_group)  { sql += " AND LOWER(age_group) = LOWER(?)"; params.push(age_group); }
 
   try {
-    const profiles = db.prepare(query).all(...params);
+    const profiles = getAll(db, sql, params);
     return res.status(200).json({ status: "success", count: profiles.length, data: profiles });
   } catch {
     return res.status(500).json({ status: "error", message: "Failed to retrieve profiles" });
   }
 });
 
-// ── GET /api/profiles/:id ─────────────────────────────────────────────────────
-router.get("/:id", (req, res) => {
+// GET /api/profiles/:id
+router.get("/:id", async (req, res) => {
+  const db = await getDb();
   try {
-    const profile = db.prepare("SELECT * FROM profiles WHERE id = ?").get(req.params.id);
+    const profile = getOne(db, "SELECT * FROM profiles WHERE id = ?", [req.params.id]);
     if (!profile) return res.status(404).json({ status: "error", message: "Profile not found" });
     return res.status(200).json({ status: "success", data: profile });
   } catch {
@@ -113,12 +96,13 @@ router.get("/:id", (req, res) => {
   }
 });
 
-// ── DELETE /api/profiles/:id ──────────────────────────────────────────────────
-router.delete("/:id", (req, res) => {
+// DELETE /api/profiles/:id
+router.delete("/:id", async (req, res) => {
+  const db = await getDb();
   try {
-    const profile = db.prepare("SELECT id FROM profiles WHERE id = ?").get(req.params.id);
+    const profile = getOne(db, "SELECT id FROM profiles WHERE id = ?", [req.params.id]);
     if (!profile) return res.status(404).json({ status: "error", message: "Profile not found" });
-    db.prepare("DELETE FROM profiles WHERE id = ?").run(req.params.id);
+    runQuery(db, "DELETE FROM profiles WHERE id = ?", [req.params.id]);
     return res.status(204).end();
   } catch {
     return res.status(500).json({ status: "error", message: "Failed to delete profile" });
