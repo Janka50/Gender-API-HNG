@@ -158,6 +158,9 @@ async function seed() {
   console.log("Initializing database...");
   await initDb();
 
+  console.log("Clearing existing seeded profiles...");
+  await query("TRUNCATE TABLE profiles RESTART IDENTITY");
+
   console.log("Generating 2026 profiles...");
   const profiles = generateProfiles(2026);
 
@@ -165,7 +168,6 @@ async function seed() {
 
   const chunkSize = 100;
   let inserted = 0;
-  let skipped = 0;
 
   for (let i = 0; i < profiles.length; i += chunkSize) {
     const chunk = profiles.slice(i, i + chunkSize);
@@ -188,12 +190,11 @@ async function seed() {
       inserted += result.rowCount;
       console.log(`Inserted chunk ${Math.floor(i/chunkSize)+1}/${Math.ceil(profiles.length/chunkSize)}`);
     } catch (err) {
-      skipped += chunk.length;
       console.error("Chunk failed:", err.message);
     }
   }
 
-  console.log(`Seed complete: ${inserted} inserted, ${skipped} skipped`);
+  console.log(`Seed complete: ${inserted} inserted`);
   process.exit(0);
 }
 

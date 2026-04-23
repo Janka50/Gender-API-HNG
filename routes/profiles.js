@@ -26,6 +26,9 @@ const COUNTRY_MAP = {
   colombia:"CO",algeria:"DZ",sudan:"SD",senegal:"SN",
 };
 
+const VALID_SORT = ["age", "created_at", "gender_probability"];
+const VALID_ORDER = ["asc", "desc"];
+
 function parseNaturalQuery(q) {
   const text = q.toLowerCase().trim();
   const filters = {};
@@ -51,124 +54,219 @@ function parseNaturalQuery(q) {
   return matched ? filters : null;
 }
 
-function buildQuery(params, countOnly = false) {
-  const VALID_SORT = ["age", "created_at", "gender_probability"];
-  const VALID_ORDER = ["asc", "desc"];
-  const { gender, age_group, country_id, min_age, max_age,
-          min_gender_probability, min_country_probability,
-          sort_by, order, page, limit } = params;
-  if (sort_by && !VALID_SORT.includes(sort_by))
-    throw { status: 400, message: "Invalid sort_by. Must be: age, created_at, gender_probability" };
-  if (order && !VALID_ORDER.includes(order.toLowerCase()))
-    throw { status: 400, message: "Invalid order. Must be asc or desc" };
+function validateAndBuildQuery(params, countOnly = false) {
+  const {
+    gender, age_group, country_id,
+    min_age, max_age,
+    min_gender_probability, min_country_probability,
+    sort_by, order, page, limit,
+  } = params;
+
+  // Validate sort_by
+  if (sort_by && !VALID_SORT.includes(sort_by)) {
+    throw { status: 400, message: "Invalid query parameters" };
+  }
+
+  // Validate order
+  if (order && !VALID_ORDER.includes(order.toLowerCase())) {
+    throw { status: 400, message: "Invalid query parameters" };
+  }
+
+  // Validate page and limit are numbers if provided
+  if (page && (isNaN(Number(page)) || Number(page) < 1)) {
+    throw { status: 400, message: "Invalid query parameters" };
+  }
+  if (limit && (isNaN(Number(limit)) || Number(limit) < 1)) {
+    throw { status: 400, message: "Invalid query parameters" };
+  }
+
+  // Validate numeric filters
+  if (min_age && isNaN(Number(min_age)))                         throw { status: 400, message: "Invalid query parameters" };
+  if (max_age && isNaN(Number(max_age)))                         throw { status: 400, message: "Invalid query parameters" };
+  if (min_gender_probability && isNaN(Number(min_gender_probability)))   throw { status: 400, message: "Invalid query parameters" };
+  if (min_country_probability && isNaN(Number(min_country_probability))) throw { status: 400, message: "Invalid query parameters" };
+
   const conditions = ["1=1"];
   const qParams = [];
   let i = 1;
+
   if (gender)     { conditions.push(`LOWER(gender) = LOWER($${i++})`);     qParams.push(gender); }
   if (age_group)  { conditions.push(`LOWER(age_group) = LOWER($${i++})`);  qParams.push(age_group); }
   if (country_id) { conditions.push(`LOWER(country_id) = LOWER($${i++})`); qParams.push(country_id); }
-  if (min_age)    { conditions.push(`age >= $${i++}`);    qParams.push(Number(min_age)); }
-  if (max_age)    { conditions.push(`age <= $${i++}`);    qParams.push(Number(max_age)); }
+  if (min_age)    { conditions.push(`age >= $${i++}`);                      qParams.push(Number(min_age)); }
+  if (max_age)    { conditions.push(`age <= $${i++}`);                      qParams.push(Number(max_age)); }
   if (min_gender_probability)  { conditions.push(`gender_probability >= $${i++}`);  qParams.push(Number(min_gender_probability)); }
   if (min_country_probability) { conditions.push(`country_probability >= $${i++}`); qParams.push(Number(min_country_probability)); }
+
   const where = conditions.join(" AND ");
-  if (countOnly) return { sql: `SELECT COUNT(*) as total FROM profiles WHERE ${where}`, params: qParams };
+
+  if (countOnly) {
+    return { sql: `SELECT COUNT(*) as total FROM profiles WHERE ${where}`, params: qParams };
+  }
+
   const sortCol  = VALID_SORT.includes(sort_by) ? sort_by : "created_at";
   const sortDir  = order && VALID_ORDER.includes(order.toLowerCase()) ? order.toUpperCase() : "DESC";
   const pageNum  = Math.max(1, parseInt(page) || 1);
   const limitNum = Math.min(50, Math.max(1, parseInt(limit) || 10));
   const offset   = (pageNum - 1) * limitNum;
-  const sql = `SELECT id, name, gender, gender_probability, age, age_group, country_id, country_name, country_probability, created_at FROM profiles WHERE ${where} ORDER BY ${sortCol} ${sortDir} LIMIT $${i++} OFFSET $${i++}`;
+
+  const sql = `
+    SELECT id, name, gender, gender_probability, age, age_group,
+           country_id, country_name, country_probability, created_at
+    FROM profiles
+    WHERE ${where}
+    ORDER BY ${sortCol} ${sortDir}
+    LIMIT $${i++} OFFSET $${i++}
+  `;
   qParams.push(limitNum, offset);
+
   return { sql, params: qParams, pageNum, limitNum };
 }
 
+// ── POST /api/profiles ────────────────────────────────────────────────────────
 router.post("/", async (req, res) => {
-  const { name } = req.body || {};
-  if (!name || (typeof name === "string" && name.trim() === ""))
-    return res.status(400).json({ status: "error", message: "Query parameter 'name' is required and cannot be empty" });
-  if (typeof name !== "string")
-    return res.status(422).json({ status: "error", message: "Query parameter 'name' must be a string" });
-  const cleanName = name.trim();
-  const existing = await query("SELECT * FROM profiles WHERE LOWER(name) = LOWER($1)", [cleanName]);
-  if (existing.rows.length > 0)
-    return res.status(200).json({ status: "success", message: "Profile already exists", data: existing.rows[0] });
-  let genderData, ageData, nationalityData;
-  try { genderData = await fetchGenderize(cleanName); }
-  catch { return res.status(502).json({ status: "error", message: "Genderize returned an invalid response" }); }
-  try { ageData = await fetchAgify(cleanName); }
-  catch { return res.status(502).json({ status: "error", message: "Agify returned an invalid response" }); }
-  try { nationalityData = await fetchNationalize(cleanName); }
-  catch { return res.status(502).json({ status: "error", message: "Nationalize returned an invalid response" }); }
-  const profile = {
-    id: uuidv4(),
-    name: cleanName,
-    gender: genderData.gender,
-    gender_probability: genderData.gender_probability,
-    sample_size: genderData.sample_size,
-    age: ageData.age,
-    age_group: getAgeGroup(ageData.age),
-    country_id: nationalityData.country_id,
-    country_name: COUNTRY_NAMES[nationalityData.country_id] || nationalityData.country_id,
-    country_probability: nationalityData.country_probability,
-    created_at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
-  };
   try {
+    const { name } = req.body || {};
+
+    if (name === undefined || name === null || (typeof name === "string" && name.trim() === "")) {
+      return res.status(400).json({ status: "error", message: "Query parameter 'name' is required and cannot be empty" });
+    }
+    if (typeof name !== "string") {
+      return res.status(422).json({ status: "error", message: "Query parameter 'name' must be a string" });
+    }
+
+    const cleanName = name.trim();
+
+    const existing = await query("SELECT * FROM profiles WHERE LOWER(name) = LOWER($1)", [cleanName]);
+    if (existing.rows.length > 0) {
+      return res.status(200).json({ status: "success", message: "Profile already exists", data: existing.rows[0] });
+    }
+
+    let genderData, ageData, nationalityData;
+
+    try { genderData = await fetchGenderize(cleanName); }
+    catch { return res.status(502).json({ status: "error", message: "Genderize returned an invalid response" }); }
+
+    try { ageData = await fetchAgify(cleanName); }
+    catch { return res.status(502).json({ status: "error", message: "Agify returned an invalid response" }); }
+
+    try { nationalityData = await fetchNationalize(cleanName); }
+    catch { return res.status(502).json({ status: "error", message: "Nationalize returned an invalid response" }); }
+
+    const profile = {
+      id: uuidv4(),
+      name: cleanName,
+      gender: genderData.gender,
+      gender_probability: genderData.gender_probability,
+      sample_size: genderData.sample_size,
+      age: ageData.age,
+      age_group: getAgeGroup(ageData.age),
+      country_id: nationalityData.country_id,
+      country_name: COUNTRY_NAMES[nationalityData.country_id] || nationalityData.country_id,
+      country_probability: nationalityData.country_probability,
+      created_at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+    };
+
     await query(
-      `INSERT INTO profiles (id,name,gender,gender_probability,sample_size,age,age_group,country_id,country_name,country_probability,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [profile.id,profile.name,profile.gender,profile.gender_probability,profile.sample_size,profile.age,profile.age_group,profile.country_id,profile.country_name,profile.country_probability,profile.created_at]
+      `INSERT INTO profiles
+        (id,name,gender,gender_probability,sample_size,age,age_group,country_id,country_name,country_probability,created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [profile.id,profile.name,profile.gender,profile.gender_probability,profile.sample_size,
+       profile.age,profile.age_group,profile.country_id,profile.country_name,
+       profile.country_probability,profile.created_at]
     );
-  } catch { return res.status(500).json({ status: "error", message: "Failed to save profile" }); }
-  return res.status(201).json({ status: "success", data: profile });
+
+    return res.status(201).json({ status: "success", data: profile });
+  } catch (err) {
+    console.error("POST /api/profiles error:", err.message);
+    return res.status(500).json({ status: "error", message: "Internal server error" });
+  }
 });
 
+// ── GET /api/profiles/search ──────────────────────────────────────────────────
 router.get("/search", async (req, res) => {
-  const { q } = req.query;
-  if (!q || q.trim() === "")
-    return res.status(400).json({ status: "error", message: "Query parameter 'q' is required" });
-  const filters = parseNaturalQuery(q);
-  if (!filters)
-    return res.status(200).json({ status: "error", message: "Unable to interpret query" });
   try {
-    const { sql, params: p, pageNum, limitNum } = buildQuery({ ...filters, ...req.query });
-    const { sql: cSql, params: cP } = buildQuery({ ...filters }, true);
+    const { q } = req.query;
+    if (!q || q.trim() === "") {
+      return res.status(400).json({ status: "error", message: "Invalid query parameters" });
+    }
+
+    const filters = parseNaturalQuery(q);
+    if (!filters) {
+      return res.status(200).json({ status: "error", message: "Unable to interpret query" });
+    }
+
+    const merged = { ...filters, page: req.query.page, limit: req.query.limit };
+    const { sql, params: p, pageNum, limitNum } = validateAndBuildQuery(merged);
+    const { sql: cSql, params: cP } = validateAndBuildQuery(filters, true);
+
     const [result, countResult] = await Promise.all([query(sql, p), query(cSql, cP)]);
-    return res.status(200).json({ status: "success", page: pageNum, limit: limitNum, total: parseInt(countResult.rows[0].total), data: result.rows });
+    const total = parseInt(countResult.rows[0].total);
+
+    return res.status(200).json({
+      status: "success",
+      page: pageNum,
+      limit: limitNum,
+      total,
+      data: result.rows,
+    });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ status: "error", message: err.message });
+    console.error("GET /search error:", err.message);
     return res.status(500).json({ status: "error", message: "Search failed" });
   }
 });
 
+// ── GET /api/profiles ─────────────────────────────────────────────────────────
 router.get("/", async (req, res) => {
   try {
-    const { sql, params: p, pageNum, limitNum } = buildQuery(req.query);
-    const { sql: cSql, params: cP } = buildQuery(req.query, true);
+    const { sql, params: p, pageNum, limitNum } = validateAndBuildQuery(req.query);
+    const { sql: cSql, params: cP } = validateAndBuildQuery(req.query, true);
+
     const [result, countResult] = await Promise.all([query(sql, p), query(cSql, cP)]);
-    return res.status(200).json({ status: "success", page: pageNum, limit: limitNum, total: parseInt(countResult.rows[0].total), data: result.rows });
+    const total = parseInt(countResult.rows[0].total);
+
+    return res.status(200).json({
+      status: "success",
+      page: pageNum,
+      limit: limitNum,
+      total,
+      data: result.rows,
+    });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ status: "error", message: err.message });
+    console.error("GET /api/profiles error:", err.message);
     return res.status(500).json({ status: "error", message: "Failed to retrieve profiles" });
   }
 });
 
+// ── GET /api/profiles/:id ─────────────────────────────────────────────────────
 router.get("/:id", async (req, res) => {
   try {
     const result = await query("SELECT * FROM profiles WHERE id = $1", [req.params.id]);
-    if (result.rows.length === 0)
+    if (result.rows.length === 0) {
       return res.status(404).json({ status: "error", message: "Profile not found" });
+    }
     return res.status(200).json({ status: "success", data: result.rows[0] });
-  } catch { return res.status(500).json({ status: "error", message: "Failed to retrieve profile" }); }
+  } catch (err) {
+    console.error("GET /:id error:", err.message);
+    return res.status(500).json({ status: "error", message: "Failed to retrieve profile" });
+  }
 });
 
+// ── DELETE /api/profiles/:id ──────────────────────────────────────────────────
 router.delete("/:id", async (req, res) => {
   try {
     const existing = await query("SELECT id FROM profiles WHERE id = $1", [req.params.id]);
-    if (existing.rows.length === 0)
+    if (existing.rows.length === 0) {
       return res.status(404).json({ status: "error", message: "Profile not found" });
+    }
     await query("DELETE FROM profiles WHERE id = $1", [req.params.id]);
     return res.status(204).end();
-  } catch { return res.status(500).json({ status: "error", message: "Failed to delete profile" }); }
+  } catch (err) {
+    console.error("DELETE /:id error:", err.message);
+    return res.status(500).json({ status: "error", message: "Failed to delete profile" });
+  }
 });
 
 module.exports = router;
