@@ -1,6 +1,9 @@
 "use strict";
 
+require("dotenv").config();
+
 const express = require("express");
+const { initDb } = require("./db");
 const app = express();
 
 app.use(express.json());
@@ -13,7 +16,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use("/api/classify", require("./api/classify"));
+app.use("/api/classify", require("./routes/classify"));
 app.use("/api/profiles", require("./routes/profiles"));
 
 app.use((req, res) => {
@@ -21,6 +24,14 @@ app.use((req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+initDb()
+  .then(() => {
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  })
+  .catch((err) => {
+    console.error("Failed to initialize database:", err);
+    process.exit(1);
+  });
 
 module.exports = app;

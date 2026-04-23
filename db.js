@@ -1,75 +1,51 @@
 "use strict";
 
-const path = require("path");
-const fs = require("fs");
-const initSqlJs = require("sql.js");
+require("dotenv").config();
+const { Pool } = require("pg");
 
-const DB_PATH = path.join(__dirname, "profiles.db");
+const pool = new Pool({
+  user: "postgres.qfhitwnisnzdteesmylf",
+  password: "AbubakarJanka@07",
+  host: "aws-0-eu-west-1.pooler.supabase.com",
+  port: 6543,
+  database: "postgres",
+  ssl: { rejectUnauthorized: false },
+  max: 2,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 30000,
+});
 
-let db;
+pool.on("error", (err) => {
+  console.error("Unexpected pool error", err.message);
+});
 
-async function getDb() {
-  if (db) return db;
-
-  const SQL = await initSqlJs();
-
-  if (fs.existsSync(DB_PATH)) {
-    const fileBuffer = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(fileBuffer);
-  } else {
-    db = new SQL.Database();
+async function query(sql, params = []) {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(sql, params);
+    return result;
+  } finally {
+    client.release();
   }
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS profiles (
-      id TEXT PRIMARY KEY,
-      name TEXT UNIQUE NOT NULL,
-      gender TEXT,
-      gender_probability REAL,
-      sample_size INTEGER,
-      age INTEGER,
-      age_group TEXT,
-      country_id TEXT,
-      country_probability REAL,
-      created_at TEXT NOT NULL
-    )
-  `);
-
-  persist(db);
-  return db;
 }
 
-function persist(database) {
-  const data = database.export();
-  fs.writeFileSync(DB_PATH, Buffer.from(data));
+async function initDb() {
+  await query(`CREATE TABLE IF NOT EXISTS profiles (
+    id TEXT PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    gender TEXT,
+    gender_probability REAL,
+    sample_size INTEGER,
+    age INTEGER,
+    age_group TEXT,
+    country_id TEXT,
+    country_name TEXT,
+    country_probability REAL,
+    created_at TEXT NOT NULL
+  )`);
+  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS country_name TEXT`);
+  await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS sample_size INTEGER`);
+  console.log("Database initialized successfully");
 }
 
-function runQuery(database, sql, params = []) {
-  database.run(sql, params);
-  persist(database);
-}
-
-function getOne(database, sql, params = []) {
-  const stmt = database.prepare(sql);
-  stmt.bind(params);
-  if (stmt.step()) {
-    const row = stmt.getAsObject();
-    stmt.free();
-    return row;
-  }
-  stmt.free();
-  return null;
-}
-
-function getAll(database, sql, params = []) {
-  const stmt = database.prepare(sql);
-  stmt.bind(params);
-  const rows = [];
-  while (stmt.step()) {
-    rows.push(stmt.getAsObject());
-  }
-  stmt.free();
-  return rows;
-}
-
-module.exports = { getDb, runQuery, getOne, getAll, persist };
+module.exports = { query, initDb };

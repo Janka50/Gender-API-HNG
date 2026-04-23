@@ -1,13 +1,17 @@
 {
   "name": "gender-api-hng",
-  "version": "2.0.0",
-  "description": "Stage 1 - Profile API with multi-API integration",
+  "version": "3.0.0",
+  "description": "Stage 2 - Intelligence query engine with filtering, sorting, pagination and NL search",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "seed": "node seed.js"
   },
   "dependencies": {
+    "dotenv": "^16.6.1",
     "express": "^4.18.3",
+    "pg": "^8.11.3",
     "uuid": "^9.0.1"
   },
   "engines": {
