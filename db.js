@@ -7,16 +7,12 @@ const pool = new Pool({
   user: process.env.PGUSER,
   password: process.env.PGPASSWORD,
   host: process.env.PGHOST,
-  port: parseInt(process.env.PGPORT),
-  database: process.env.PGDATABASE,
+  port: parseInt(process.env.PGPORT) || 6543,
+  database: process.env.PGDATABASE || "postgres",
   ssl: { rejectUnauthorized: false },
   max: 2,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 30000,
-});
-
-pool.on("error", (err) => {
-  console.error("Unexpected pool error", err.message);
 });
 
 async function query(sql, params = []) {
@@ -45,7 +41,6 @@ async function initDb() {
   )`);
   await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS country_name TEXT`);
   await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS sample_size INTEGER`);
-  console.log("Database initialized successfully");
 }
 
 module.exports = { query, initDb };

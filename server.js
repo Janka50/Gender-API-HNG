@@ -3,7 +3,6 @@
 require("dotenv").config();
 
 const express = require("express");
-const { initDb } = require("./db");
 const app = express();
 
 app.use(express.json());
@@ -24,18 +23,6 @@ app.use((req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-const PORT = process.env.PORT || 3000;
-
-initDb()
-  .then(() => {
-    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-  })
-  .catch((err) => {
-    console.error("DB INIT FAILED:", err.message);
-    console.error("PGUSER:", process.env.PGUSER);
-    console.error("PGHOST:", process.env.PGHOST);
-    console.error("PGPORT:", process.env.PGPORT);
-    process.exit(1);
-  });
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 module.exports = app;
