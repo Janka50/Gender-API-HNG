@@ -26,6 +26,8 @@ app.use(limiter);
 // ── Body parsing + cookies ────────────────────────────────────────────────────
 app.use(express.json());
 app.use(cookieParser());
+app.get("/health", (req, res) => res.status(200).json({ status: "ok" }));
+app.get("/", (req, res) => res.status(200).json({ status: "ok" }));
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 app.use((req, res, next) => {
