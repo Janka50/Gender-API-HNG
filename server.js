@@ -61,16 +61,13 @@ app.use((err, req, res, next) => {
   res.status(500).json({ status: "error", message: "Internal server error" });
 });
 
-const { initDb } = require("./db");
 const PORT = process.env.PORT || 3000;
-
-initDb()
-  .then(() => {
-app.listen(PORT, "0.0.0.0", () => console.log(`Server running on port ${PORT}`));
-  })
-  .catch((err) => {
-    console.error("DB init failed:", err.message);
-    process.exit(1);
-  });
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server running on port ${PORT}`);
+  const { initDb } = require("./db");
+  initDb()
+    .then(() => console.log("Database initialized"))
+    .catch((err) => console.error("DB init error:", err.message));
+});
 
 module.exports = app;
