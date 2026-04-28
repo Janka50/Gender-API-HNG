@@ -4,14 +4,14 @@ require("dotenv").config();
 const { Pool } = require("pg");
 
 const pool = new Pool({
-  user: process.env.PGUSER,
+  user:     process.env.PGUSER,
   password: process.env.PGPASSWORD,
-  host: process.env.PGHOST,
-  port: parseInt(process.env.PGPORT) || 6543,
+  host:     process.env.PGHOST,
+  port:     parseInt(process.env.PGPORT) || 6543,
   database: process.env.PGDATABASE || "postgres",
-  ssl: { rejectUnauthorized: false },
-  max: 2,
-  idleTimeoutMillis: 30000,
+  ssl:      { rejectUnauthorized: false },
+  max:      2,
+  idleTimeoutMillis:    30000,
   connectionTimeoutMillis: 30000,
 });
 
@@ -26,6 +26,7 @@ async function query(sql, params = []) {
 }
 
 async function initDb() {
+  // Profiles table (existing)
   await query(`CREATE TABLE IF NOT EXISTS profiles (
     id TEXT PRIMARY KEY,
     name TEXT UNIQUE NOT NULL,
@@ -39,8 +40,26 @@ async function initDb() {
     country_probability REAL,
     created_at TEXT NOT NULL
   )`);
+
   await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS country_name TEXT`);
   await query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS sample_size INTEGER`);
+
+  // Users table (Stage 3)
+  await query(`CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    github_id TEXT UNIQUE NOT NULL,
+    username TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'analyst',
+    created_at TEXT NOT NULL
+  )`);
+
+  // Refresh tokens table (Stage 3)
+  await query(`CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token TEXT UNIQUE NOT NULL,
+    created_at TEXT NOT NULL
+  )`);
 }
 
 module.exports = { query, initDb };
