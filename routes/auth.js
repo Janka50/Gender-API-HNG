@@ -143,24 +143,25 @@ router.get("/github/callback", async (req, res) => {
       });
     }
 
-    // Web — set HTTP-only cookies
-    res.cookie("access_token", access_token, {
-      httpOnly: true,
-      secure:   process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge:   15 * 60 * 1000,
-    });
-    res.cookie("refresh_token", refresh_token, {
-      httpOnly: true,
-      secure:   process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge:   7 * 24 * 60 * 60 * 1000,
-    });
+  // Web — set HTTP-only cookies
+res.cookie("access_token", access_token, {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax",
+  maxAge: 15 * 60 * 1000,
+});
+res.cookie("refresh_token", refresh_token, {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax",
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+});
 
-    return res.status(200).json({
-      status: "success",
-      user: { id: user.id, username: user.username, role: user.role },
-    });
+// Redirect to web portal dashboard
+const webPortalUrl = process.env.WEB_PORTAL_URL || "http://localhost:3000";
+return res.redirect(`${webPortalUrl}/dashboard`);
+
+   
   } catch (err) {
     console.error("GitHub callback error:", err.message, err.stack);
     console.error("Token data:", JSON.stringify(tokenData || {}));
