@@ -26,14 +26,21 @@ app.use(limiter);
 // ── Body parsing + cookies ────────────────────────────────────────────────────
 app.use(express.json());
 app.use(cookieParser());
-app.get("/health", (req, res) => res.status(200).json({ status: "ok" }));
-app.get("/", (req, res) => res.status(200).json({ status: "ok" }));
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", process.env.ALLOWED_ORIGIN || "*");
+  const allowedOrigins = [
+    "http://localhost:3000",
+    process.env.WEB_PORTAL_URL || "",
+  ];
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.setHeader("Access-Control-Allow-Credentials", "true");
   if (req.method === "OPTIONS") return res.status(204).end();
   next();
@@ -64,12 +71,6 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
-  const { initDb } = require("./db");
-  initDb()
-    .then(() => console.log("Database initialized"))
-    .catch((err) => console.error("DB init error:", err.message));
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 module.exports = app;
