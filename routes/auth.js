@@ -229,4 +229,16 @@ router.post("/logout", async (req, res) => {
   }
 });
 
+
+// GET /api/v1/auth/me
+router.get("/me", requireAuth, (req, res) => {
+  return res.status(200).json({
+    status: "success",
+    data: {
+      id: req.user.id,
+      username: req.user.username,
+      role: req.user.role,
+    },
+  });
+});
 module.exports = router;
