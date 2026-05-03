@@ -136,6 +136,7 @@ router.get("/github/callback", async (req, res) => {
     );
 
     // CLI — return JSON
+ // CLI — return JSON
     if (isCli) {
       return res.status(200).json({
         status: "success",
@@ -145,28 +146,12 @@ router.get("/github/callback", async (req, res) => {
       });
     }
 
-  // Web — set HTTP-only cookies
-res.cookie("access_token", access_token, {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "lax",
-  maxAge: 15 * 60 * 1000,
-});
-res.cookie("refresh_token", refresh_token, {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "lax",
-  maxAge: 7 * 24 * 60 * 60 * 1000,
-});
+    // Web — redirect with tokens in URL
+    const webPortalUrl = process.env.WEB_PORTAL_URL || "http://localhost:3000";
+    return res.redirect(`${webPortalUrl}/auth/callback?access_token=${access_token}&refresh_token=${refresh_token}&role=${user.role}&username=${user.username}`);
 
-// Redirect to web portal dashboard
-const webPortalUrl = process.env.WEB_PORTAL_URL || "http://localhost:3000";
-return res.redirect(`${webPortalUrl}/dashboard`);
-
-   
   } catch (err) {
-    console.error("GitHub callback error:", err.message, err.stack);
-    console.error("Token data:", JSON.stringify(tokenData || {}));
+    console.error("GitHub callback error:", err.message);
     return res.status(500).json({ status: "error", message: err.message });
   }
 });
