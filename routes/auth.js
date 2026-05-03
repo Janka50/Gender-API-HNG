@@ -5,6 +5,8 @@ const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const { v4: uuidv4 } = require("uuid");
 const { query } = require("../db");
+const { requireAuth } = require("../middleware/auth");
+
 
 const router = express.Router();
 
