@@ -5,7 +5,8 @@ const { v4: uuidv4 } = require("uuid");
 const { query } = require("../db");
 const { fetchGenderize, fetchAgify, fetchNationalize, getAgeGroup } = require("../helpers");
 const { requireAuth, requireRole } = require("../middleware/auth");
-
+const { getCache, setCache } = require("../lib/cache");
+const { normalizeQuery } = require("../lib/normalize"); // Part 2
 const router = express.Router();
 
 const COUNTRY_NAMES = {
@@ -95,14 +96,21 @@ function validateAndBuildQuery(params, countOnly = false) {
   const pageNum  = Math.max(1, parseInt(page) || 1);
   const limitNum = Math.min(50, Math.max(1, parseInt(limit) || 10));
   const offset   = (pageNum - 1) * limitNum;
+  
 
-  const sql = `
-    SELECT id, name, gender, gender_probability, age, age_group,
-           country_id, country_name, country_probability, created_at
-    FROM profiles WHERE ${where}
-    ORDER BY ${sortCol} ${sortDir}
-    LIMIT $${i++} OFFSET $${i++}
-  `;
+
+//(fast — only fetch what the client needs)
+const sql = `
+  SELECT
+    id, name, gender, gender_probability,
+    age, age_group, country_id, country_name,
+    country_probability, created_at
+  FROM profiles
+  WHERE ${where}
+  ORDER BY ${sortCol} ${sortDir}
+  LIMIT $${i} OFFSET $${i + 1}
+`;
+  
   qParams.push(limitNum, offset);
   return { sql, params: qParams, pageNum, limitNum };
 }
@@ -155,7 +163,39 @@ router.post("/", async (req, res) => {
     return res.status(500).json({ status: "error", message: "Internal server error" });
   }
 });
+//temporary caching for development
+router.get("/", async (req, res) => {
+  console.time("profiles-query");
 
+  const cacheKey = `profiles:${normalizeQuery(req.query)}`;
+  const cached = await getCache(cacheKey);
+
+  if (cached) {
+    console.timeEnd("profiles-query"); // expect ~2-5ms
+    return res.status(200).json(cached);
+  }
+
+  // DB query
+  const result = await runQuery(req.query);
+  await setCache(cacheKey, result);
+
+  console.timeEnd("profiles-query"); // expect ~100-400ms first time
+  return res.status(200).json(result);
+});
+const { normalizeQuery } = require("../lib/normalize");
+const { getCache, setCache } = require("../lib/cache");
+
+router.get("/", async (req, res) => {
+  // Generate deterministic cache key
+  const cacheKey = `profiles:${normalizeQuery(req.query)}`;
+
+  const cached = await getCache(cacheKey);
+  if (cached) return res.status(200).json(cached);
+
+  // ... DB query ...
+  await setCache(cacheKey, result);
+  return res.status(200).json(result);
+});
 // GET /api/v1/profiles/search
 router.get("/search", async (req, res) => {
   try {
@@ -205,6 +245,28 @@ router.get("/export", requireAuth, requireRole("admin"), async (req, res) => {
 });
 
 // GET /api/v1/profiles
+
+router.get("/", async (req, res) => {
+  try {
+    const cacheKey = `profiles:${normalizeQuery(req.query)}`;
+
+    // Check cache first
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return res.status(200).json(cached);
+    }
+
+    // ... your existing DB query logic ...
+    const result = { status: "success", page, limit, total, data };
+
+    // Store in cache
+    await setCache(cacheKey, result);
+
+    return res.status(200).json(result);
+  } catch (err) {
+    return res.status(500).json({ status: "error", message: "Failed" });
+  }
+});
 router.get("/", async (req, res) => {
   try {
     const { sql, params: p, pageNum, limitNum } = validateAndBuildQuery(req.query);

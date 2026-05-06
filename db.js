@@ -2,19 +2,21 @@
 
 require("dotenv").config();
 const { Pool } = require("pg");
-
 const pool = new Pool({
-  user:     process.env.PGUSER,
+  user: process.env.PGUSER,
   password: process.env.PGPASSWORD,
-  host:     process.env.PGHOST,
-  port:     parseInt(process.env.PGPORT) || 6543,
+  host: process.env.PGHOST,
+  port: parseInt(process.env.PGPORT) || 6543,
   database: process.env.PGDATABASE || "postgres",
-  ssl:      { rejectUnauthorized: false },
-  max:      2,
-  idleTimeoutMillis:    30000,
-  connectionTimeoutMillis: 30000,
-});
+  ssl: { rejectUnauthorized: false },
 
+  // Pooling config
+  max: 10,                  // max connections in pool
+  min: 2,                   // keep 2 warm connections alive
+  idleTimeoutMillis: 30000, // close idle connections after 30s
+  connectionTimeoutMillis: 5000, // fail fast if no connection in 5s
+  allowExitOnIdle: false,
+});
 async function query(sql, params = []) {
   const client = await pool.connect();
   try {

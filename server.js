@@ -54,7 +54,7 @@ v1.use("/profiles", require("./routes/profiles"));
 v1.use("/classify", require("./routes/classify"));
 
 app.use("/api/v1", v1);
-
+app.use("/api/v1/upload", require("./routes/upload"));
 // ── Legacy Stage 2 routes (keep working during transition) ────────────────────
 app.use("/api/profiles", require("./routes/profiles"));
 app.use("/api/classify",  require("./routes/classify"));
