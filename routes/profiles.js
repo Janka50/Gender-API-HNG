@@ -182,7 +182,7 @@ router.get("/", async (req, res) => {
   console.timeEnd("profiles-query"); // expect ~100-400ms first time
   return res.status(200).json(result);
 });
-const { normalizeQuery } = require("../lib/normalize");
+
 const { getCache, setCache } = require("../lib/cache");
 
 router.get("/", async (req, res) => {
